@@ -1,0 +1,99 @@
+version: "3.8"
+services:
+  preprocess:
+    build: ./services/preprocess
+    image: crack-preprocess:latest
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    command: ["python","/app/preprocess.py"]
+    restart: "no"
+
+  feature-server:
+    build: ./services/feature_server
+    image: crack-feature-server:latest
+    ports:
+      - "8101:8000"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    depends_on:
+      - preprocess
+
+  matcher:
+    build: ./services/matcher
+    image: crack-matcher:latest
+    ports:
+      - "8102:8000"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    depends_on:
+      - feature-server
+
+  homography:
+    build: ./services/homography
+    image: crack-homography:latest
+    ports:
+      - "8103:8000"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    depends_on:
+      - matcher
+
+  shift:
+    build: ./services/shift
+    image: crack-shift:latest
+    ports:
+      - "8104:8000"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    depends_on:
+      - feature-server
+
+  vae:
+    build: ./services/vae
+    image: crack-vae:latest
+    ports:
+      - "8105:8000"
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+  orchestrator:
+    build: ./services/orchestrator
+    image: crack-orchestrator:latest
+    volumes:
+      - ./data:/data
+      - ./results:/results
+      - ./logs:/logs
+      - ./configs:/app/configs
+    depends_on:
+      - feature-server
+      - matcher
+      - homography
+      - shift
+      - vae
+
+  aggregator:
+    build: ./services/aggregator
+    image: crack-aggregator:latest
+    volumes:
+      - ./results:/results
+      - ./logs:/logs
+    depends_on:
+      - orchestrator
+
+volumes:
+  data:
+  results:
+  logs:
