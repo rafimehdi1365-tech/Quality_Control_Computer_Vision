@@ -1,0 +1,6 @@
+- name: Check feature files exist
+  run: |
+    python -c "import os; import sys;
+    assert os.path.exists('features/sift/source'), 'Missing SIFT source folder'
+    assert len(os.listdir('features/sift/source')) > 0, 'No SIFT files found'
+    print('✅ Feature extraction passed.')"
