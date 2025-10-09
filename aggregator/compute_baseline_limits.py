@@ -13,3 +13,4 @@ def compute_baseline_from_results(result_dir="results"):
     out_path = Path(result_dir) / "baseline_limits.json"
     json.dump(limits, open(out_path, "w"), indent=2)
     print(f"✅ Baseline limits saved to {out_path}")
+compute_baseline_limits = compute_baseline_from_results
