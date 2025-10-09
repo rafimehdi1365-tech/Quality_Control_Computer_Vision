@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  base:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.base
+    volumes:
+      - ../:/app
+    command: python src/orchestrator/orchestrator.py
+
+  vae:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.vae
+    volumes:
+      - ../:/app
+    command: python src/vae/vae_service.py
