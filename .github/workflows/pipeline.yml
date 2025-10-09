@@ -24,7 +24,7 @@ jobs:
 
       - name: Run orchestrator
         run: |
-          python src/orchestrator/orchestrator.py
+          python -m src.orchestrator.orchestrator
 
       - name: Upload results
         uses: actions/upload-artifact@v4
