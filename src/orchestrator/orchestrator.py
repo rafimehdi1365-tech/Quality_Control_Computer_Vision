@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from src.utils.config_parser import load_yaml, get_combinations
 from src.utils.logger import get_logger
-from src.aggregator.compute_baseline_limits import compute_baseline_from_results
+from src.aggregator.compute_baseline_limits import compute_baseline_limits
 from aggregator.compute_arl_with_limits import compute_arl_with_limits
 
 logger = get_logger(__name__)
@@ -58,7 +58,7 @@ def run_combo(combo, results_dir, mode="ci"):
            out_file=str(baseline_file))
 
     # compute baseline limits
-    baseline_summary = compute_baseline_from_results(str(baseline_file))
+    baseline_summary = compute_baseline_limits(str(baseline_file))
     baseline_json = combo_dir / "baseline_limits.json"
     with open(baseline_json, "w") as f:
         json.dump(baseline_summary, f, indent=2)
