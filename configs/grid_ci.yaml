@@ -1,0 +1,25 @@
+# configs/grid_ci.yaml
+methods:
+  - method1
+  - method2
+  - method3
+
+detectors:
+  - SIFT
+  - ORB
+
+matchers:
+  - BF
+  - FLANN
+
+homographies:
+  - RANSAC
+  - LSTSQ
+
+defaults:
+  params:
+    baseline_samples: 20
+    shifted_samples: 20
+    shifts:
+      - {dx: 5, dy: 5}
+    repeats: 2
