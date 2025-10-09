@@ -1,157 +1,144 @@
-import os
-import json
+# src/orchestrator/orchestrator.py
 import argparse
 import math
+import json
+import importlib
 from pathlib import Path
 from datetime import datetime
-from src.utils.config_parser import load_yaml
+from src.utils.config_parser import load_yaml, get_combinations
 from src.utils.logger import get_logger
-
-# فرض بر این است که pipeline های method1, method2, method3 به صورت تابع import شده‌اند
-from src.pipelines.method1_pipeline import run_method1
-from src.pipelines.method2_pipeline import run_method2
-from src.pipelines.method3_pipeline import run_method3
-
-# tools
 from aggregator.compute_baseline_limits import compute_baseline_limits
 from aggregator.compute_arl_with_limits import compute_arl_with_limits
 
 logger = get_logger(__name__)
 
-# -----------------------
-# Orchestrator
-# -----------------------
+def import_runner_for_method(method):
+    """
+    dynamic import of pipeline module.
+    module path expected: src.pipelines.<method>_pipeline
+    preferred function name: run_pipeline
+    fallback names: run_method1, run_method2, run_method3
+    """
+    module_name = f"src.pipelines.{method}_pipeline"
+    try:
+        mod = importlib.import_module(module_name)
+    except Exception as e:
+        raise ImportError(f"Cannot import pipeline module '{module_name}': {e}")
+    # prefer run_pipeline
+    for fname in ("run_pipeline", f"run_{method}", "run_method"):
+        if hasattr(mod, fname):
+            return getattr(mod, fname)
+    # fallback: search for any callable in module named run_method1/2/3
+    for attr in dir(mod):
+        if attr.startswith("run_") and callable(getattr(mod, attr)):
+            return getattr(mod, attr)
+    raise AttributeError(f"No runnable function found in module {module_name}. Please provide run_pipeline(...)")
 
 def run_combo(combo, results_dir, mode="ci"):
-    """اجرای یک ترکیب از grid (detector + matcher + homography)"""
     run_id = combo["run_id"]
     method = combo["method"]
     detector = combo["detector"]
     matcher = combo["matcher"]
     homography = combo["homography"]
-    params = combo["params"]
+    params = combo.get("params", {})
 
-    logger.info(f"🚀 Running {run_id} [{mode}]")
-
-    # مسیر خروجی‌ها
-    combo_dir = results_dir / run_id
+    logger.info(f"=== RUN {run_id} (mode={mode}) ===")
+    combo_dir = Path(results_dir) / run_id
     combo_dir.mkdir(parents=True, exist_ok=True)
 
-    # انتخاب تابع مناسب بر اساس method
-    if method == "method1":
-        runner = run_method1
-    elif method == "method2":
-        runner = run_method2
-    elif method == "method3":
-        runner = run_method3
-    else:
-        raise ValueError(f"Unknown method: {method}")
+    # dynamic runner
+    runner = import_runner_for_method(method)
 
-    # baseline phase
-    logger.info(f"→ Baseline ({params['baseline_samples']} samples)")
+    # baseline
     baseline_file = combo_dir / "baseline_results.jsonl"
+    logger.info(f"Baseline: {params.get('baseline_samples')} samples")
     runner(detector, matcher, homography,
-           n_samples=params["baseline_samples"],
+           n_samples=params.get("baseline_samples", 100),
            shift=None,
-           out_file=baseline_file)
+           out_file=str(baseline_file))
 
-    # compute baseline limits (mean, sigma, UCL)
-    baseline_summary = compute_baseline_limits(baseline_file)
+    # compute baseline limits
+    baseline_summary = compute_baseline_limits(str(baseline_file))
     baseline_json = combo_dir / "baseline_limits.json"
     with open(baseline_json, "w") as f:
         json.dump(baseline_summary, f, indent=2)
 
-    # shift scenarios
-    shifts = params.get("shifts", [{"dx": 5, "dy": 5}])
-    repeats = params.get("repeats", 3)
-    shifted_summary = []
+    # shifts
+    shifts = params.get("shifts", [{"dx":5,"dy":5}])
+    repeats = params.get("repeats", 1)
+    arl_records = []
 
-    for sidx, shift in enumerate(shifts):
-        for rep in range(repeats):
-            run_name = f"shift_dx{shift['dx']}_dy{shift['dy']}_r{rep+1}"
-            logger.info(f"→ Shift phase {run_name} ({params['shifted_samples']} samples)")
-            shifted_file = combo_dir / f"{run_name}_results.jsonl"
-
+    for s in shifts:
+        for r in range(repeats):
+            run_tag = f"shift_dx{s['dx']}_dy{s['dy']}_r{r+1}"
+            shifted_file = combo_dir / f"{run_tag}_results.jsonl"
+            logger.info(f"Shift run: {run_tag} — samples={params.get('shifted_samples')}")
             runner(detector, matcher, homography,
-                   n_samples=params["shifted_samples"],
-                   shift=shift,
-                   out_file=shifted_file)
+                   n_samples=params.get("shifted_samples", 100),
+                   shift=s,
+                   out_file=str(shifted_file))
 
-            # compute ARL for this run
-            arl_result = compute_arl_with_limits(
-                baseline_limits=baseline_json,
-                shifted_results=shifted_file
-            )
-            arl_result["run_name"] = run_name
-            shifted_summary.append(arl_result)
+            arl_res = compute_arl_with_limits(baseline_limits=str(baseline_json), shifted_results=str(shifted_file))
+            arl_res.update({"run_tag": run_tag, "shift": s})
+            arl_records.append(arl_res)
 
-    # ذخیره خلاصه ARL ها
-    summary_path = combo_dir / "arl_summary.json"
-    with open(summary_path, "w") as f:
-        json.dump(shifted_summary, f, indent=2)
+    with open(combo_dir / "arl_summary.json", "w") as f:
+        json.dump(arl_records, f, indent=2)
 
-    logger.info(f"✅ Finished {run_id}")
-    return summary_path
+    logger.info(f"=== FINISHED {run_id} ===")
+    return combo_dir
 
+def run_batch(grid_path, batch_id, batches=12, mode="ci"):
+    cfg = load_yaml(grid_path)
+    combos = get_combinations(cfg)
+    total = len(combos)
+    batch_id = int(batch_id)
+    batches = int(batches)
+    batch_size = math.ceil(total / batches)
+    start = (batch_id-1)*batch_size
+    end = min(start + batch_size, total)
+    batch_combos = combos[start:end]
 
-def run_batch(grid_path, batch_id, mode="ci"):
-    """اجرای بخشی از ترکیب‌ها (batch mode برای GitHub Actions)"""
-    config = load_yaml(grid_path)
-    combos = config["combos"]
-
-    # تقسیم‌بندی به batch های کوچکتر
-    batch_size = math.ceil(len(combos) / 12)  # فرض 12 job موازی
-    start_idx = (batch_id - 1) * batch_size
-    end_idx = start_idx + batch_size
-    batch_combos = combos[start_idx:end_idx]
-
-    logger.info(f"🏁 Starting batch {batch_id} with {len(batch_combos)} combos")
-
+    logger.info(f"Running batch {batch_id}/{batches}: combos {start}..{end-1} (count={len(batch_combos)})")
     results_dir = Path("results") / f"batch_{batch_id}"
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    all_summaries = []
-
+    summary = []
     for combo in batch_combos:
         try:
-            summary_path = run_combo(combo, results_dir, mode)
-            all_summaries.append({
-                "run_id": combo["run_id"],
-                "summary_file": str(summary_path)
-            })
+            combo_dir = run_combo(combo, results_dir, mode)
+            summary.append({"run_id": combo["run_id"], "dir": str(combo_dir)})
         except Exception as e:
-            logger.error(f"❌ Error in combo {combo['run_id']}: {e}")
+            logger.error(f"Error running combo {combo.get('run_id')}: {e}")
 
-    # ذخیره خلاصه batch
     with open(results_dir / f"batch_{batch_id}_summary.json", "w") as f:
-        json.dump(all_summaries, f, indent=2)
+        json.dump(summary, f, indent=2)
 
-    logger.info(f"✅ Batch {batch_id} finished.")
+    logger.info(f"Batch {batch_id} done. Results in {results_dir}")
 
-
-def run_full(grid_path):
-    """اجرای تمام ترکیب‌ها (برای Colab یا VPS)"""
-    config = load_yaml(grid_path)
-    combos = config["combos"]
-    results_dir = Path("results") / datetime.now().strftime("%Y%m%d_%H%M%S")
+def run_full(grid_path, mode="full"):
+    cfg = load_yaml(grid_path)
+    combos = get_combinations(cfg)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = Path("results") / ts
     results_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Running full grid: {len(combos)} combos -> results/{ts}")
 
     for combo in combos:
-        run_combo(combo, results_dir, mode="full")
-
+        try:
+            run_combo(combo, results_dir, mode)
+        except Exception as e:
+            logger.error(f"Error combo {combo.get('run_id')}: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--grid", type=str, required=True,
-                        help="Path to grid YAML file")
-    parser.add_argument("--batch", type=int, default=None,
-                        help="Batch number (for CI mode)")
-    parser.add_argument("--mode", type=str, default="ci",
-                        choices=["ci", "full"],
-                        help="Mode: ci (GitHub) or full (Colab/VPS)")
+    parser.add_argument("--grid", required=True, help="path to grid yaml")
+    parser.add_argument("--batch", type=int, help="batch id (1-based)")
+    parser.add_argument("--batches", type=int, default=12, help="total number of batches")
+    parser.add_argument("--mode", choices=["ci","full"], default="ci")
     args = parser.parse_args()
 
     if args.batch:
-        run_batch(args.grid, args.batch, args.mode)
+        run_batch(args.grid, args.batch, batches=args.batches, mode=args.mode)
     else:
-        run_full(args.grid)
+        run_full(args.grid, mode=args.mode)
