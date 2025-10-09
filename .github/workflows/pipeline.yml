@@ -1,4 +1,4 @@
-name: fault Detection Pipeline
+name: Fault Detection Pipeline
 
 on:
   push:
@@ -24,9 +24,8 @@ jobs:
 
       - name: Run orchestrator
         run: |
-          python -m src.orchestrator.orchestrator --grid configs/grid_full.yaml
+          python -m src.orchestrator.orchestrator --grid configs/grid_full.yaml --mode full
 
-          
       - name: Debug workspace content
         run: |
           echo "=== Current directory ==="
@@ -38,7 +37,5 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: results
-          path: results/
           name: results
           path: results/
