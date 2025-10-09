@@ -26,9 +26,19 @@ jobs:
         run: |
           python -m src.orchestrator.orchestrator --grid configs/grid_full.yaml
 
+          
+      - name: Debug workspace content
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Files and folders ==="
+          ls -R .
 
-      - name: Upload results
+      - name: Upload results (if exist)
+        if: success()
         uses: actions/upload-artifact@v4
         with:
+          name: results
+          path: results/
           name: results
           path: results/
