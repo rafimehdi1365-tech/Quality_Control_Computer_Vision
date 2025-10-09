@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from src.utils.config_parser import load_yaml, get_combinations
 from src.utils.logger import get_logger
-from src.aggregator.compute_baseline_limits import compute_baseline_limits
+from aggregator.compute_baseline_limits import compute_baseline_limits
 from aggregator.compute_arl_with_limits import compute_arl_with_limits
 
 logger = get_logger(__name__)
