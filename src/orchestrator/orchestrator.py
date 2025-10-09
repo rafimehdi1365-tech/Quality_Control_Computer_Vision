@@ -9,6 +9,9 @@ from src.utils.config_parser import load_yaml, get_combinations
 from src.utils.logger import get_logger
 from aggregator.compute_baseline_limits import compute_baseline_limits
 from aggregator.compute_arl_with_limits import compute_arl_with_limits
+import os
+from pathlib import Path
+os.chdir(Path(__file__).resolve().parents[2])  # برگرد به ریشه پروژه
 
 logger = get_logger(__name__)
 
