@@ -1,0 +1,3 @@
+detectors: ["SIFT", "ORB", "BRISK", "AKAZE"]
+matchers: ["BF", "FLANN"]
+homographies: ["RANSAC", "LSTSQ", "DLT", "LMEDS", "USAC"]
