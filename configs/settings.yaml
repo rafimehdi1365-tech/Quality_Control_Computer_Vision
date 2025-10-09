@@ -1,0 +1,5 @@
+data_dir: "data"
+results_dir: "results"
+device: "cpu"
+vae_latent_dim: 32
+vae_epochs: 80
