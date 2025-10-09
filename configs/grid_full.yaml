@@ -1,0 +1,32 @@
+# configs/grid_full.yaml
+methods:
+  - method1
+  - method2
+  - method3
+
+detectors:
+  - SIFT
+  - ORB
+  - BRISK
+  - AKAZE
+
+matchers:
+  - BF
+  - FLANN
+
+homographies:
+  - RANSAC
+  - LSTSQ
+  - DLT
+  - LMEDS
+  - USAC
+
+defaults:
+  params:
+    baseline_samples: 120
+    shifted_samples: 120
+    shifts:
+      - {dx: 2, dy: 0}
+      - {dx: 5, dy: 0}
+      - {dx: 10, dy: 0}
+    repeats: 30
