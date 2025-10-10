@@ -44,3 +44,5 @@ def run_lstsq_estimation(feature_dir, out_json="results/homography_lstsq.json"):
     with open(out_json, "w") as f: json.dump(results, f, indent=2)
     save_summary(results, out_json)
     print(f"✅ LSTSQ homography results saved to {out_json}")
+def run_lstsq(*args, **kwargs):
+    return run_lstsq_estimation(*args, **kwargs)
