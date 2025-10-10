@@ -1,5 +1,5 @@
 from src.utils.logger import get_logger
-from src.utils.dataset_loader import load_dataset
+from src.utils.dataset_loader import load_images
 from src.shift.shift_service import apply_shift
 from src.matching.io_utils import save_jsonl_record
 from src.detectors import sift_service, orb_service, brisk_service, akaze_service
