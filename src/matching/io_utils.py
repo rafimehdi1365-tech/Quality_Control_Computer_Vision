@@ -1,17 +1,4 @@
-import json
-import numpy as np
-from pathlib import Path
+import cv2
 
-def load_features(src_path, tgt_path):
-    """Load keypoints and descriptors from npz feature files."""
-    if not src_path.exists() or not tgt_path.exists():
-        return None, None, None, None
-    src_data, tgt_data = np.load(src_path), np.load(tgt_path)
-    return src_data["keypoints"], src_data["descriptors"], tgt_data["keypoints"], tgt_data["descriptors"]
-
-def save_json(data, path):
-    """Save JSON file with safe indent."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+def draw_matches(img1, kp1, img2, kp2, matches, max_draw=20):
+    return cv2.drawMatches(img1, kp1, img2, kp2, matches[:max_draw], None, flags=2)
