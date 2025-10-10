@@ -13,6 +13,9 @@ def run_bf_match(des1, des2, detector_name="SIFT", cross_check=True):
         norm_type = cv2.NORM_HAMMING
     else:
         norm_type = cv2.NORM_L2
+    cross_check = params.get("crossCheck", False)
+    if isinstance(cross_check, str):
+        cross_check = cross_check.lower() in ("true", "1", "yes")
 
     bf = cv2.BFMatcher(norm_type, crossCheck=cross_check)
     matches = bf.match(des1, des2)
