@@ -1,19 +1,23 @@
 import cv2
 import numpy as np
-from pathlib import Path
 
-def apply_shift_to_folder(input_dir, output_dir, dx=10, dy=10):
-    """Apply pixel-level shift to simulate defect motion."""
-    input_dir, output_dir = Path(input_dir), Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for img_path in input_dir.glob("*.jpg"):
-        img = cv2.imread(str(img_path))
-        if img is None:
-            continue
+def apply_shift(image, shift_type="translation", shift_params=(5,5)):
+    """
+    اعمال شیفت روی تصویر برای شبیه‌سازی خطا
+    shift_type: نوع شیفت ('translation', 'rotation', 'scaling')
+    shift_params: پارامترهای شیفت
+    """
+    h, w = image.shape[:2]
+    if shift_type == "translation":
+        dx, dy = shift_params
         M = np.float32([[1, 0, dx], [0, 1, dy]])
-        shifted = cv2.warpAffine(img, M, (img.shape[1], img.shape[0]))
-        cv2.imwrite(str(output_dir / img_path.name), shifted)
-    print(f"✅ Shifted images saved in {output_dir}")
-
-if __name__ == "__main__":
-    apply_shift_to_folder("data/processed/source", "data/shifted/source", dx=5, dy=8)
+        return cv2.warpAffine(image, M, (w, h))
+    elif shift_type == "rotation":
+        angle = shift_params
+        M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1)
+        return cv2.warpAffine(image, M, (w, h))
+    elif shift_type == "scaling":
+        scale = shift_params
+        return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+    else:
+        return image
