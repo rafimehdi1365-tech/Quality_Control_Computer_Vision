@@ -14,9 +14,9 @@ def load_images_from_folder(folder):
                 imgs[fn.name] = img
     return imgs
 
-def load_dataset(base_dir="data"):
+def load_images(base_dir="data"):
     """
-    Load source and target images.
+    Load source and target images for pipelines.
     Returns:
       src_imgs, tgt_imgs : dicts mapping filename -> image_array
     """
