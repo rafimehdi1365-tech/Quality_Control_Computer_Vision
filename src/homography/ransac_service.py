@@ -2,7 +2,9 @@ import cv2, json, numpy as np
 from pathlib import Path
 from src.matching.summary_writer import save_summary
 
+
 def estimate_homography(src_pts, dst_pts, method="RANSAC"):
+    """Estimate homography matrix between two point sets."""
     if len(src_pts) < 4:
         return None, None
     if method == "RANSAC":
@@ -12,7 +14,9 @@ def estimate_homography(src_pts, dst_pts, method="RANSAC"):
     else:
         return cv2.findHomography(src_pts, dst_pts, 0)
 
+
 def reprojection_error(src_pts, dst_pts, H):
+    """Compute mean reprojection error."""
     if H is None:
         return np.inf
     src_h = np.concatenate([src_pts, np.ones((len(src_pts), 1))], axis=1)
@@ -21,21 +25,32 @@ def reprojection_error(src_pts, dst_pts, H):
     err = np.linalg.norm(proj[:, :2] - dst_pts, axis=1)
     return np.mean(err)
 
+
 def run_homography_estimation(match_json, feature_dir, detector, method="RANSAC", out_json="results/homography_ransac.json"):
+    """Main homography estimation pipeline."""
     Path(out_json).parent.mkdir(parents=True, exist_ok=True)
     with open(match_json, "r") as f:
         matches_data = json.load(f)
+
+    cache = {}  # 🔹 برای کاهش زمان load در GitHub Actions
 
     results = []
     for rec in matches_data:
         if rec["n_matches"] < 4:
             continue
-        # load descriptors again for simplicity
-        sdata = np.load(Path(feature_dir)/"source"/rec["source_file"])
-        tdata = np.load(Path(feature_dir)/"target"/rec["target_file"])
+
+        src_path = Path(feature_dir) / "source" / rec["source_file"]
+        tgt_path = Path(feature_dir) / "target" / rec["target_file"]
+
+        # caching to avoid repeated disk I/O
+        if src_path not in cache:
+            cache[src_path] = np.load(src_path)
+        if tgt_path not in cache:
+            cache[tgt_path] = np.load(tgt_path)
+
+        sdata, tdata = cache[src_path], cache[tgt_path]
         kp1, kp2 = sdata["keypoints"], tdata["keypoints"]
 
-        # dummy random subset (for demonstration)
         idx = np.random.choice(min(len(kp1), len(kp2)), size=min(20, len(kp1), len(kp2)), replace=False)
         src_pts = np.float32(kp1[idx])
         dst_pts = np.float32(kp2[idx])
@@ -55,6 +70,13 @@ def run_homography_estimation(match_json, feature_dir, detector, method="RANSAC"
 
     save_summary(results, out_json)
     print(f"✅ Homography ({method}) results saved to {out_json}")
+
+
+# 🔹 اضافه کردن alias برای سازگاری با pipelineهای قدیمی
+def run_ransac(match_json, feature_dir, detector, method="RANSAC", out_json="results/homography_ransac.json"):
+    """Alias for backward compatibility — calls run_homography_estimation"""
+    return run_homography_estimation(match_json, feature_dir, detector, method, out_json)
+
 
 if __name__ == "__main__":
     run_homography_estimation("results/bf_results.json", "features/sift", "SIFT", method="RANSAC")
