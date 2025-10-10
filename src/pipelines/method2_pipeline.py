@@ -15,7 +15,7 @@ def run_method2(detector, matcher, homography, n_samples=20, shift=None, out_fil
     src_images, tgt_images = load_images()
 
     # استخراج ویژگی‌ها و محاسبه matching
-    matches = run_flann_match(src_images, tgt_images, detector, matcher)
+    matches = run_flann_match(src_images, tgt_images, detector)
 
     # محاسبه هموگرافی
     homography_results = run_lstsq(matches, homography)
