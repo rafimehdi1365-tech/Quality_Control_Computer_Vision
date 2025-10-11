@@ -1,48 +1,63 @@
-import numpy as np, json, cv2
+# src/homography/lstsq_service.py
+import numpy as np
+from typing import List, Dict, Optional
+try:
+    from src.utils.logger import get_logger
+    logger = get_logger(__name__)
+except Exception:
+    import logging
+    logger = logging.getLogger(__name__)
+
+from src.homography._helpers import reprojection_errors
+from src.matching.io_utils import append_jsonl, ensure_dir
 from pathlib import Path
-from src.matching.summary_writer import save_summary
 
-def estimate_lstsq(src_pts, dst_pts):
-    """Estimate homography via least squares."""
-    if len(src_pts) < 4:
-        return None
-    A, B = [], []
-    for (x, y), (u, v) in zip(src_pts, dst_pts):
-        A.append([x, y, 1, 0, 0, 0, -u*x, -u*y])
-        A.append([0, 0, 0, x, y, 1, -v*x, -v*y])
-        B.append(u)
-        B.append(v)
-    A, B = np.array(A), np.array(B)
-    h, _, _, _ = np.linalg.lstsq(A, B, rcond=None)
-    H = np.append(h, 1).reshape(3, 3)
-    return H
-
-def reprojection_error(src_pts, dst_pts, H):
-    if H is None:
-        return np.inf
-    src_h = np.hstack([src_pts, np.ones((len(src_pts), 1))])
-    proj = (H @ src_h.T).T
-    proj /= proj[:, 2:3]
-    return np.mean(np.linalg.norm(proj[:, :2] - dst_pts, axis=1))
-
-def run_lstsq_estimation(feature_dir, out_json="results/homography_lstsq.json"):
-    Path(out_json).parent.mkdir(parents=True, exist_ok=True)
-    src_dir = Path(feature_dir)/"source"
-    tgt_dir = Path(feature_dir)/"target"
+def run_lstsq(matches_list: List[Dict], params: Optional[Dict]=None, save_debug: Optional[Path]=None) -> List[Dict]:
+    if params is None:
+        params = {}
     results = []
-    for sfile in src_dir.glob("*.npz"):
-        tfile = tgt_dir / sfile.name.replace("_source", "_target")
-        if not tfile.exists():
-            continue
-        sdata, tdata = np.load(sfile), np.load(tfile)
-        kp1, kp2 = sdata["keypoints"], tdata["keypoints"]
-        n = min(len(kp1), len(kp2), 50)
-        idx = np.random.choice(len(kp1), n, replace=False)
-        H = estimate_lstsq(kp1[idx], kp2[idx])
-        err = reprojection_error(kp1[idx], kp2[idx], H)
-        results.append({"file": sfile.name, "method": "LSTSQ", "reprojection_error": float(err)})
-    with open(out_json, "w") as f: json.dump(results, f, indent=2)
-    save_summary(results, out_json)
-    print(f"✅ LSTSQ homography results saved to {out_json}")
-def run_lstsq(*args, **kwargs):
-    return run_lstsq_estimation(*args, **kwargs)
+    if save_debug:
+        ensure_dir(Path(save_debug).parent)
+
+    for rec in matches_list:
+        pair_id = rec.get("pair_id", "unknown")
+        try:
+            good = rec.get("good_matches", [])
+            if len(good) < 4:
+                out = {"pair_id": pair_id, "H": None, "status": "not_enough_points", "n_inliers": 0, "reproj_mean": None, "reproj_median": None, "error": None}
+                results.append(out)
+                if save_debug: append_jsonl(out, save_debug)
+                continue
+
+            # Build linear system A h = b (like earlier)
+            A = []
+            b = []
+            for (x1,y1,x2,y2, *_ ) in good:
+                A.append([x1, y1, 1, 0, 0, 0, -x2*x1, -x2*y1])
+                A.append([0, 0, 0, x1, y1, 1, -y2*x1, -y2*y1])
+                b.append(x2)
+                b.append(y2)
+            A = np.array(A)
+            b = np.array(b)
+
+            # Solve via lstsq
+            h, *_ = np.linalg.lstsq(A, b, rcond=None)
+            H = np.append(h, 1).reshape(3,3)
+
+            # reprojection
+            src = np.float32([[m[0],m[1]] for m in good]).reshape(-1,1,2)
+            dst = np.float32([[m[2],m[3]] for m in good]).reshape(-1,1,2)
+            dists = reprojection_errors(H, src, dst)
+            mean_err = float(np.mean(dists))
+            med_err = float(np.median(dists))
+            out = {"pair_id": pair_id, "H": H.tolist(), "status": "ok", "n_inliers": len(good), "reproj_mean": mean_err, "reproj_median": med_err, "error": None}
+            results.append(out)
+            if save_debug: append_jsonl(out, save_debug)
+
+        except Exception as e:
+            logger.exception("LSTSQ error for %s: %s", pair_id, str(e))
+            out = {"pair_id": pair_id, "H": None, "status": "exception", "n_inliers": 0, "reproj_mean": None, "reproj_median": None, "error": str(e)}
+            results.append(out)
+            if save_debug: append_jsonl(out, save_debug)
+
+    return results
