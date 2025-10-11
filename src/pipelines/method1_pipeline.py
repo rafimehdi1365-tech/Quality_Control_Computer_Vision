@@ -132,7 +132,22 @@ def run_method1_pipeline(
     L_factor: float = 3.0,
     max_arl_steps: int = 500,
     shift_params: Optional[Dict] = None,
+    # accept legacy / extra params from orchestrator:
+    n_samples: Optional[int] = None,
+    params: Optional[Dict] = None,
+    **kwargs,
 ):
+    # backward compatibility: orchestrator may pass n_samples
+    if n_samples is not None:
+        logger.warning("Got legacy parameter 'n_samples' — mapping to n_baseline")
+        n_baseline = int(n_samples)
+    # if orchestrator passed 'params' (was mentioned in logs), try to use relevant keys
+    if params:
+        logger.info("Received 'params' dict from orchestrator — merging into shift_params if present")
+        # example: allow params to override shift_params or other named args
+        if "shift_params" in params and not shift_params:
+            shift_params = params["shift_params"]
+
     combo_name = combo_name or f"method1__{detector_name.upper()}__{matcher_name.upper()}__{homography_name.upper()}"
     out_dir = make_output_dir("results", combo_name)
     logger.info(f"Output dir: {out_dir}")
