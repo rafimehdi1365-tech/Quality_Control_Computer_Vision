@@ -55,7 +55,18 @@ def run_method3_pipeline(
     max_arl_steps: int = 500,
     shift_params: Optional[Dict] = None,
     save_keypoints_json: bool = True,
+    n_samples: Optional[int] = None,
+    params: Optional[Dict] = None,
+    **kwargs,
 ):
+    if n_samples is not None:
+        logger.warning("Got legacy parameter 'n_samples' — mapping to n_baseline")
+        n_baseline = int(n_samples)
+    if params:
+        logger.info("Received 'params' dict from orchestrator")
+        if "save_keypoints_json" in params:
+            save_keypoints_json = bool(params["save_keypoints_json"])
+
     combo_name = combo_name or f"method3__{detector_name.upper()}__{matcher_name.upper()}__{homography_name.upper()}"
     out_dir = make_output_dir("results", combo_name)
     errors = []
