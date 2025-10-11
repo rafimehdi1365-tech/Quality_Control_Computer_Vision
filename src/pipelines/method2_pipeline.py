@@ -81,7 +81,20 @@ def run_method2_pipeline(
     L_factor: float = 3.0,
     max_arl_steps: int = 500,
     shift_params: Optional[Dict] = None,
+    n_samples: Optional[int] = None,
+    params: Optional[Dict] = None,
+    **kwargs,
 ):
+    if n_samples is not None:
+        logger.warning("Got legacy parameter 'n_samples' — mapping to n_baseline")
+        n_baseline = int(n_samples)
+    if params:
+        logger.info("Received 'params' dict from orchestrator")
+        if "use_vae" in params:
+            use_vae = bool(params["use_vae"])
+        if "shift_params" in params and not shift_params:
+            shift_params = params["shift_params"]
+
     combo_name = combo_name or f"method2__{detector_name.upper()}__{matcher_name.upper()}__{homography_name.upper()}__VAE_{use_vae}"
     out_dir = make_output_dir("results", combo_name)
     errors = []
