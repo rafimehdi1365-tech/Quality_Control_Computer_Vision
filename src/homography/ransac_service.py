@@ -1,62 +1,80 @@
-import cv2
+# src/homography/ransac_service.py
 import numpy as np
+import cv2
+from typing import List, Dict, Optional
+from src.homography._helpers import _to_pts_array, reprojection_errors
+try:
+    from src.utils.logger import get_logger
+    logger = get_logger(__name__)
+except Exception:
+    import logging
+    logger = logging.getLogger(__name__)
 
-def run_ransac(matches, method_name="RANSAC", params=None):
+from src.matching.io_utils import append_jsonl, ensure_dir
+from pathlib import Path
+
+def run_ransac(matches_list: List[Dict], params: Optional[Dict]=None, save_debug: Optional[Path]=None) -> List[Dict]:
+    """
+    matches_list: list of dicts produced by matchers (with "pair_id" and "good_matches")
+    returns list of homography result dicts
+    """
     if params is None:
         params = {}
-
-    # تنظیمات پیش‌فرض
-    ransac_reproj_threshold = params.get("ransac_reproj_threshold", 5.0)
-    max_iter = params.get("max_iter", 2000)
+    reproj_thresh = params.get("ransac_reproj_threshold", 5.0)
+    max_iters = params.get("max_iter", 2000)
     confidence = params.get("confidence", 0.995)
 
-    all_results = []
+    results = []
+    if save_debug:
+        ensure_dir(Path(save_debug).parent)
 
-    for good_matches in matches:
-        if len(good_matches) < 4:
-            all_results.append({"homography": None, "status": "not_enough_points"})
-            continue
+    for rec in matches_list:
+        pair_id = rec.get("pair_id", "unknown")
+        try:
+            good = rec.get("good_matches", [])
+            if len(good) < 4:
+                out = {"pair_id": pair_id, "H": None, "status": "not_enough_points", "n_inliers": 0, "reproj_mean": None, "reproj_median": None, "error": None}
+                results.append(out)
+                if save_debug:
+                    append_jsonl(out, save_debug)
+                continue
 
-        src_pts = np.float32([m[0] for m in good_matches]).reshape(-1, 1, 2)
-        dst_pts = np.float32([m[1] for m in good_matches]).reshape(-1, 1, 2)
+            src_pts, dst_pts = _to_pts_array(good)
+            if src_pts is None:
+                out = {"pair_id": pair_id, "H": None, "status": "bad_input", "n_inliers": 0, "reproj_mean": None, "reproj_median": None, "error": "src/dst conversion failed"}
+                results.append(out)
+                if save_debug:
+                    append_jsonl(out, save_debug)
+                continue
 
-        if method_name == "RANSAC":
-            method_flag = cv2.RANSAC
-        elif method_name == "LMEDS":
-            method_flag = cv2.LMEDS
-        elif method_name == "USAC":
-            method_flag = cv2.USAC_MAGSAC
-        elif method_name == "DLT":
-            method_flag = 0  # DLT استاندارد
-        elif method_name == "LSTSQ":
-            # کمترین مربعات -> استفاده از np.linalg.lstsq
-            A = []
-            b = []
-            for (x1, y1), (x2, y2) in good_matches:
-                A.append([x1, y1, 1, 0, 0, 0, -x2 * x1, -x2 * y1])
-                A.append([0, 0, 0, x1, y1, 1, -y2 * x1, -y2 * y1])
-                b.append(x2)
-                b.append(y2)
-            A = np.array(A)
-            b = np.array(b)
-            h, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
-            H = np.append(h, 1).reshape(3, 3)
-            all_results.append({"homography": H.tolist(), "status": "ok"})
-            continue
-        else:
-            raise ValueError(f"Unknown homography method: {method_name}")
+            H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, reproj_thresh, maxIters=max_iters, confidence=confidence)
+            if H is None:
+                out = {"pair_id": pair_id, "H": None, "status": "failed", "n_inliers": 0, "reproj_mean": None, "reproj_median": None, "error": "cv_findHomography_failed"}
+                results.append(out)
+                if save_debug:
+                    append_jsonl(out, save_debug)
+                continue
 
-        H, mask = cv2.findHomography(
-            src_pts, dst_pts,
-            method_flag,
-            ransac_reproj_threshold,
-            maxIters=max_iter,
-            confidence=confidence
-        )
+            # compute reprojection errors on all points, but mask inliers
+            dists = reprojection_errors(H, src_pts, dst_pts)
+            if dists is None:
+                mean_err = None
+                med_err = None
+            else:
+                mean_err = float(np.mean(dists))
+                med_err = float(np.median(dists))
 
-        if H is None:
-            all_results.append({"homography": None, "status": "failed"})
-        else:
-            all_results.append({"homography": H.tolist(), "status": "ok"})
+            n_inliers = int(np.sum(mask)) if mask is not None else 0
+            out = {"pair_id": pair_id, "H": H.tolist(), "status": "ok", "n_inliers": n_inliers, "reproj_mean": mean_err, "reproj_median": med_err, "error": None}
+            results.append(out)
+            if save_debug:
+                append_jsonl(out, save_debug)
 
-    return all_results
+        except Exception as e:
+            logger.exception("RANSAC error for %s: %s", pair_id, str(e))
+            out = {"pair_id": pair_id, "H": None, "status": "exception", "n_inliers": 0, "reproj_mean": None, "reproj_median": None, "error": str(e)}
+            results.append(out)
+            if save_debug:
+                append_jsonl(out, save_debug)
+
+    return results
