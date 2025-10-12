@@ -20,4 +20,22 @@ def load_images_from_folder(folder):
 
 def load_images(base_dir="data"):
     """
-    Load source and target ima
+    Load source and target images for pipelines.
+    Returns:
+      src_imgs, tgt_imgs : lists of image arrays
+      src_names, tgt_names : lists of filenames (same order)
+    """
+    base = Path(base_dir)
+    src_dir = base / "source"
+    tgt_dir = base / "target"
+
+    if not src_dir.exists() or not tgt_dir.exists():
+        raise FileNotFoundError(f"Expected folders: {src_dir}, {tgt_dir}")
+
+    src_imgs, src_names = load_images_from_folder(src_dir)
+    tgt_imgs, tgt_names = load_images_from_folder(tgt_dir)
+
+    if len(src_imgs) == 0 or len(tgt_imgs) == 0:
+        raise ValueError("No images found in source/ or target/")
+
+    return src_imgs, tgt_imgs, src_names, tgt_names
