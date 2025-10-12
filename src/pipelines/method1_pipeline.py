@@ -156,7 +156,7 @@ def run_method1_pipeline(
     try:
         # 1) load images
         try:
-            src_images, tgt_images = load_images()
+            src_images, tgt_images, src_names, tgt_names = load_images()
             logger.info(f"Loaded {len(src_images)} source and {len(tgt_images)} target images")
         except Exception:
             logger.exception("Failed to load images")
