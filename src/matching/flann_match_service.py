@@ -1,32 +1,34 @@
 import cv2
+import logging
+import numpy as np
+from typing import List, Dict
 
-def run_flann_match(des1, des2, detector_name="SIFT"):
-    """
-    Run FLANN-based matching between two descriptor sets.
-    :param des1: descriptors from image 1
-    :param des2: descriptors from image 2
-    :param detector_name: name of the feature detector
-    :return: good matches (ratio test)
-    """
-    if detector_name in ["ORB", "BRISK"]:
-        # For binary descriptors
-        index_params = dict(algorithm=6,  # FLANN_INDEX_LSH
-                            table_number=6,
-                            key_size=12,
-                            multi_probe_level=1)
+logger = logging.getLogger(__name__)
+
+def match_descriptors(desc1, desc2, ratio_test=0.75):
+    try:
+        if desc1 is None or desc2 is None or len(desc1) == 0 or len(desc2) == 0:
+            logger.debug("Empty descriptors provided to FLANN matcher")
+            return []
+
+        # FLANN params: handle float descriptors (SIFT) and binary -> convert if needed
+        if desc1.dtype != np.float32:
+            desc1 = desc1.astype(np.float32)
+            desc2 = desc2.astype(np.float32)
+
+        index_params = dict(algorithm=1, trees=5)  # KDTree for float
         search_params = dict(checks=50)
-    else:
-        # For float descriptors (SIFT, AKAZE)
-        index_params = dict(algorithm=1, trees=5)  # FLANN_INDEX_KDTREE
-        search_params = dict(checks=50)
-
-    flann = cv2.FlannBasedMatcher(index_params, search_params)
-    matches = flann.knnMatch(des1, des2, k=2)
-
-    # Lowe’s ratio test
-    good_matches = []
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
-            good_matches.append(m)
-
-    return sorted(good_matches, key=lambda x: x.distance)
+        flann = cv2.FlannBasedMatcher(index_params, search_params)
+        knn_matches = flann.knnMatch(desc1, desc2, k=2)
+        good = []
+        for m_n in knn_matches:
+            if len(m_n) < 2:
+                continue
+            m, n = m_n
+            if m.distance < ratio_test * n.distance:
+                good.append(m)
+        good = sorted(good, key=lambda x: x.distance)
+        return [{"queryIdx": int(m.queryIdx), "trainIdx": int(m.trainIdx), "distance": float(m.distance)} for m in good]
+    except Exception as e:
+        logger.exception("FLANN matching failed: %s", e)
+        return []
