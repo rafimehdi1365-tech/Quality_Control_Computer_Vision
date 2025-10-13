@@ -1,26 +1,55 @@
-import cv2, numpy as np, json
+# src/homography/lmeds_service.py
+import numpy as np
+import cv2
+import logging
+from typing import List, Dict, Optional
 from pathlib import Path
-from src.matching.summary_writer import save_summary
 
-def run_lmeds_estimation(feature_dir, out_json="results/homography_lmeds.json"):
-    Path(out_json).parent.mkdir(parents=True, exist_ok=True)
-    src_dir = Path(feature_dir)/"source"
-    tgt_dir = Path(feature_dir)/"target"
-    results = []
-    for sfile in src_dir.glob("*.npz"):
-        tfile = tgt_dir / sfile.name.replace("_source", "_target")
-        if not tfile.exists(): continue
-        sdata, tdata = np.load(sfile), np.load(tfile)
-        kp1, kp2 = sdata["keypoints"], tdata["keypoints"]
-        n = min(len(kp1), len(kp2), 50)
-        idx = np.random.choice(len(kp1), n, replace=False)
-        src_pts, dst_pts = kp1[idx], kp2[idx]
-        H, _ = cv2.findHomography(src_pts, dst_pts, cv2.LMEDS)
-        if H is None: continue
-        src_h = np.hstack([src_pts, np.ones((n, 1))])
-        proj = (H @ src_h.T).T; proj /= proj[:, 2:3]
-        err = np.mean(np.linalg.norm(proj[:, :2] - dst_pts, axis=1))
-        results.append({"file": sfile.name, "method": "LMEDS", "reprojection_error": float(err)})
-    with open(out_json, "w") as f: json.dump(results, f, indent=2)
-    save_summary(results, out_json)
-    print(f"✅ LMEDS homography results saved to {out_json}")
+from src.homography._helpers import _to_pts_array, reprojection_errors
+from src.matching.io_utils import append_jsonl, ensure_dir
+
+logger = logging.getLogger(__name__)
+
+def estimate_homography(
+    matches: List[Dict],
+    keypoints1,
+    keypoints2,
+    params: Optional[Dict] = None,
+    save_debug: Optional[Path] = None
+) -> Dict:
+    """
+    Estimate homography using LMEDS (Least Median of Squares).
+    Returns dict with H, reproj_median, mean_reproj, etc.
+    """
+    try:
+        if params is None:
+            params = {}
+        confidence = float(params.get("confidence", 0.99))
+
+        if save_debug:
+            ensure_dir(Path(save_debug))
+
+        src_pts, dst_pts = _to_pts_array(matches, keypoints1, keypoints2)
+        if src_pts is None or dst_pts is None or len(src_pts) < 4:
+            return {"H": None, "status": "not_enough_points", "n_inliers": 0,
+                    "reproj_median": None, "mean_reproj": None, "error": "not_enough_points"}
+
+        H, mask = cv2.findHomography(src_pts, dst_pts, cv2.LMEDS, confidence=confidence)
+        if H is None:
+            return {"H": None, "status": "failed", "n_inliers": 0,
+                    "reproj_median": None, "mean_reproj": None, "error": "cv_findHomography_failed"}
+
+        dists = reprojection_errors(H, src_pts, dst_pts)
+        mean_err = float(np.mean(dists)) if dists is not None else None
+        med_err = float(np.median(dists)) if dists is not None else None
+        n_inliers = int(np.sum(mask)) if mask is not None else 0
+
+        out = {"H": H.tolist(), "status": "ok", "n_inliers": n_inliers,
+               "reproj_median": med_err, "mean_reproj": mean_err, "error": None}
+        if save_debug:
+            append_jsonl(out, Path(save_debug))
+        return out
+    except Exception as e:
+        logger.exception("LMEDS estimate_homography failed: %s", e)
+        return {"H": None, "status": "exception", "n_inliers": 0,
+                "reproj_median": None, "mean_reproj": None, "error": str(e)}
