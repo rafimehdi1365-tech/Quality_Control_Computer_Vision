@@ -1,23 +1,27 @@
+# src/shift/shift_service.py
 import cv2
 import numpy as np
+import logging
 
-def apply_shift(image, shift_type="translation", shift_params=(5,5)):
+logger = logging.getLogger(__name__)
+
+def apply_shift(image, shift_params):
     """
-    اعمال شیفت روی تصویر برای شبیه‌سازی خطا
-    shift_type: نوع شیفت ('translation', 'rotation', 'scaling')
-    shift_params: پارامترهای شیفت
+    shift_params: dict e.g. {"type":"spatial", "dx": 2.0, "dy": 0.0}
+    returns warped image (same shape)
     """
-    h, w = image.shape[:2]
-    if shift_type == "translation":
-        dx, dy = shift_params
-        M = np.float32([[1, 0, dx], [0, 1, dy]])
-        return cv2.warpAffine(image, M, (w, h))
-    elif shift_type == "rotation":
-        angle = shift_params
-        M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1)
-        return cv2.warpAffine(image, M, (w, h))
-    elif shift_type == "scaling":
-        scale = shift_params
-        return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
-    else:
-        return image
+    try:
+        stype = shift_params.get("type", "spatial")
+        if stype == "spatial":
+            dx = float(shift_params.get("dx", 0.0))
+            dy = float(shift_params.get("dy", 0.0))
+            h, w = image.shape[:2]
+            M = np.array([[1, 0, dx], [0, 1, dy]], dtype=np.float32)
+            shifted = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+            return shifted
+        else:
+            logger.warning("Unknown shift type '%s' — returning original image", stype)
+            return image
+    except Exception as e:
+        logger.exception("apply_shift failed: %s", e)
+        raise
