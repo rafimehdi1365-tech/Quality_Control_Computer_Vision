@@ -25,9 +25,21 @@ def make_output_dir(base: str, combo_name: str) -> Path:
     return out
 
 
-def save_json(obj: Any, path: Path):
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
+
+
+def save_json(obj, path):
+    def default(o):
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        if isinstance(o, (np.float32, np.float64)):
+            return float(o)
+        if isinstance(o, (np.int32, np.int64)):
+            return int(o)
+        return str(o)
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False, default=default)
+
 
 
 def simple_mewma_limits(stats: np.ndarray, lamb: float = 0.2, L: float = 3.0):
