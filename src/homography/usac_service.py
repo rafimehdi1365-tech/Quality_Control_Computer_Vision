@@ -1,26 +1,56 @@
-import cv2, numpy as np, json
+# src/homography/usac_service.py
+import numpy as np
+import cv2
+from typing import Dict, List, Optional
 from pathlib import Path
-from src.matching.summary_writer import save_summary
 
-def run_usac_estimation(feature_dir, out_json="results/homography_usac.json"):
-    Path(out_json).parent.mkdir(parents=True, exist_ok=True)
-    src_dir = Path(feature_dir)/"source"
-    tgt_dir = Path(feature_dir)/"target"
-    results = []
-    for sfile in src_dir.glob("*.npz"):
-        tfile = tgt_dir / sfile.name.replace("_source", "_target")
-        if not tfile.exists(): continue
-        sdata, tdata = np.load(sfile), np.load(tfile)
-        kp1, kp2 = sdata["keypoints"], tdata["keypoints"]
-        n = min(len(kp1), len(kp2), 50)
-        idx = np.random.choice(len(kp1), n, replace=False)
-        src_pts, dst_pts = kp1[idx], kp2[idx]
-        H, _ = cv2.findHomography(src_pts, dst_pts, cv2.USAC_ACCURATE)
-        if H is None: continue
-        src_h = np.hstack([src_pts, np.ones((n, 1))])
-        proj = (H @ src_h.T).T; proj /= proj[:, 2:3]
-        err = np.mean(np.linalg.norm(proj[:, :2] - dst_pts, axis=1))
-        results.append({"file": sfile.name, "method": "USAC", "reprojection_error": float(err)})
-    with open(out_json, "w") as f: json.dump(results, f, indent=2)
-    save_summary(results, out_json)
-    print(f"✅ USAC homography results saved to {out_json}")
+try:
+    from src.utils.logger import get_logger
+    logger = get_logger(__name__)
+except Exception:
+    import logging
+    logger = logging.getLogger(__name__)
+
+from src.homography._helpers import _to_pts_array, reprojection_errors
+from src.matching.io_utils import append_jsonl, ensure_dir
+
+
+def estimate_homography(matches: List, keypoints1, keypoints2, params: Optional[Dict] = None, save_debug: Optional[Path] = None) -> Dict:
+    """
+    Estimate homography using USAC (Universal Sample Consensus).
+    Requires OpenCV built with USAC support.
+    """
+    if params is None:
+        params = {}
+    results = {}
+
+    try:
+        if len(matches) < 4:
+            return {"H": None, "status": "not_enough_points", "n_inliers": 0}
+
+        src_pts, dst_pts = _to_pts_array(matches, keypoints1, keypoints2)
+        if src_pts is None:
+            return {"H": None, "status": "bad_input", "n_inliers": 0, "error": "src/dst conversion failed"}
+
+        # USAC (OpenCV ≥ 4.5.1)
+        H, mask = cv2.findHomography(src_pts, dst_pts, cv2.USAC_DEFAULT, ransacReprojThreshold=5.0)
+        if H is None:
+            return {"H": None, "status": "failed", "n_inliers": 0, "error": "cv_findHomography_failed"}
+
+        dists = reprojection_errors(H, src_pts, dst_pts)
+        results = {
+            "H": H.tolist(),
+            "status": "ok",
+            "n_inliers": int(np.sum(mask)) if mask is not None else 0,
+            "reproj_mean": float(np.mean(dists)) if dists is not None else None,
+            "reproj_median": float(np.median(dists)) if dists is not None else None,
+        }
+        if save_debug:
+            ensure_dir(Path(save_debug).parent)
+            append_jsonl(results, save_debug)
+
+    except Exception as e:
+        logger.exception("USAC error: %s", str(e))
+        results = {"H": None, "status": "exception", "error": str(e)}
+
+    return results
