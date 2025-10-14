@@ -65,6 +65,37 @@ def plot_mewma(z, center, upper, lower, out_path: Path, title: str):
     plt.savefig(out_path)
     plt.close()
 
+def compute_arl(mewma_center: float, sigma_hat: float, lamb: float, L: float, gen_next_stat_fn, max_steps: int = 1000):
+    """
+    Simulate MEWMA until alarm triggers. Returns ARL (average run length).
+    - mewma_center: MEWMA center (baseline mean)
+    - sigma_hat: estimated sigma from baseline
+    - lamb: MEWMA lambda
+    - L: control limit factor
+    - gen_next_stat_fn: function(step_index) -> next sample statistic
+    - max_steps: cap on number of iterations
+    """
+    z = None
+    for i in range(1, max_steps + 1):
+        try:
+            stat = float(gen_next_stat_fn(i))
+        except Exception as e:
+            logger.exception(f"Error generating stat at step {i}: {e}")
+            return None
+
+        if i == 1:
+            z = stat
+        else:
+            z = lamb * stat + (1 - lamb) * z
+
+        # dynamic limit
+        limit = mewma_center + L * sigma_hat * np.sqrt((lamb / (2 - lamb)) * (1 - (1 - lamb) ** (2 * i)))
+
+        if z > limit or z < (mewma_center - (limit - mewma_center)):
+            return i  # alarm triggered
+
+    return max_steps
+
 
 # --------------------
 # Import helpers
