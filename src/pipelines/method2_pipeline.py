@@ -100,7 +100,7 @@ def run_method2_pipeline(
     errors = []
     try:
         # load images
-        src_images, tgt_images = load_images()
+        src_images, tgt_images, src_names, tgt_names = load_images()
         logger.info(f"Loaded images: {len(src_images)} / {len(tgt_images)}")
         # import modules
         detector_mod = import_detector(detector_name)
