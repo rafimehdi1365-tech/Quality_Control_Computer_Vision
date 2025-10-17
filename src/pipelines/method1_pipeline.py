@@ -129,7 +129,9 @@ def run_method1_pipeline(
 
     combo_name = combo_name or f"method1__{detector_name.upper()}__{matcher_name.upper()}__{homography_name.upper()}"
     out_dir = make_output_dir("results", combo_name)
-    baseline_dir = out_dir / "baseline_results.jsonl"
+
+    # 🔧 اصلاح شد (دیگه .jsonl نیست → الان یک دایرکتوری واقعی می‌سازه)
+    baseline_dir = out_dir / "baseline_results"
     baseline_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Output dir: {out_dir}")
