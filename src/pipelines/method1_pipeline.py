@@ -4,7 +4,7 @@ import json
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -65,15 +65,10 @@ def plot_mewma(z, center, upper, lower, out_path: Path, title: str):
     plt.savefig(out_path)
     plt.close()
 
+
 def compute_arl(mewma_center: float, sigma_hat: float, lamb: float, L: float, gen_next_stat_fn, max_steps: int = 1000):
     """
     Simulate MEWMA until alarm triggers. Returns ARL (average run length).
-    - mewma_center: MEWMA center (baseline mean)
-    - sigma_hat: estimated sigma from baseline
-    - lamb: MEWMA lambda
-    - L: control limit factor
-    - gen_next_stat_fn: function(step_index) -> next sample statistic
-    - max_steps: cap on number of iterations
     """
     z = None
     for i in range(1, max_steps + 1):
@@ -88,7 +83,7 @@ def compute_arl(mewma_center: float, sigma_hat: float, lamb: float, L: float, ge
         else:
             z = lamb * stat + (1 - lamb) * z
 
-        # dynamic limit
+        # dynamic control limit
         limit = mewma_center + L * sigma_hat * np.sqrt((lamb / (2 - lamb)) * (1 - (1 - lamb) ** (2 * i)))
 
         if z > limit or z < (mewma_center - (limit - mewma_center)):
@@ -183,7 +178,7 @@ def run_method1_pipeline(
                 "upper": upper,
                 "lower": lower,
             },
-            out_dir / "baseline_limits.json",  # 🔹 تغییر اسم فایل
+            out_dir / "baseline_limits.json",
         )
         plot_mewma(z_series, center, upper, lower, out_dir / "mewma_baseline.png", f"{combo_name} MEWMA baseline")
 
@@ -206,8 +201,6 @@ def run_method1_pipeline(
             stat = float(hres.get("reproj_median", hres.get("mean_reproj", hres.get("error", 9999))))
             shifted_stats.append(stat)
             return stat
-
-        from src.pipelines.method1_pipeline import compute_arl  # self import
 
         try:
             arl = compute_arl(center, sigma_hat, mewma_lambda, L_factor, gen_shifted_stat, max_steps=max_arl_steps)
@@ -234,7 +227,7 @@ def run_method1_pipeline(
         logger.info(f"Pipeline finished for {combo_name}. ARL={arl}")
         return summary
 
-    except Exception as exc:
+    except Exception:
         logger.exception("Fatal error in method1 pipeline")
         errors.append(traceback.format_exc())
         save_json({"errors": errors}, out_dir / "errors.json")
