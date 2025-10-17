@@ -1,9 +1,11 @@
+# src/pipelines/method1_pipeline.py
 import importlib
 import json
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -11,6 +13,95 @@ from src.utils.logger import get_logger
 from src.utils.dataset_loader import load_images
 
 logger = get_logger(__name__)
+
+# --------------------
+# Utility helpers
+# --------------------
+def make_output_dir(base: str, combo_name: str) -> Path:
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    out = Path(base) / f"{ts}" / combo_name
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def save_json(obj: Any, path: Path):
+    def default(o):
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        return str(o)
+
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False, default=default)
+
+
+def simple_mewma_limits(stats: np.ndarray, lamb: float = 0.2, L: float = 3.0):
+    if len(stats) == 0:
+        raise ValueError("Empty stats for MEWMA")
+
+    z = np.zeros(len(stats))
+    z[0] = stats[0]
+    for i in range(1, len(stats)):
+        z[i] = lamb * stats[i] + (1 - lamb) * z[i - 1]
+    sigma_hat = np.std(stats, ddof=1)
+    n = np.arange(1, len(stats) + 1)
+    factor = np.sqrt((lamb / (2 - lamb)) * (1 - (1 - lamb) ** (2 * n)))
+    upper = (np.mean(stats)) + L * sigma_hat * factor
+    lower = (np.mean(stats)) - L * sigma_hat * factor
+    return float(np.mean(stats)), float(sigma_hat), z.tolist(), upper.tolist(), lower.tolist()
+
+
+def plot_mewma(z, center, upper, lower, out_path: Path, title: str):
+    plt.figure(figsize=(8, 4))
+    plt.plot(z, label="MEWMA stat")
+    plt.plot([center] * len(z), "--", label="Center")
+    plt.plot(upper, "r--", label="Upper limit")
+    plt.plot(lower, "r--", label="Lower limit")
+    plt.legend()
+    plt.title(title)
+    plt.xlabel("sample")
+    plt.ylabel("stat")
+    plt.tight_layout()
+    plt.savefig(out_path)
+    plt.close()
+
+
+def compute_arl(mewma_center: float, sigma_hat: float, lamb: float, L: float, gen_next_stat_fn, max_steps: int = 1000):
+    z = None
+    for i in range(1, max_steps + 1):
+        try:
+            stat = float(gen_next_stat_fn(i))
+        except Exception as e:
+            logger.exception(f"Error generating stat at step {i}: {e}")
+            return None
+
+        if i == 1:
+            z = stat
+        else:
+            z = lamb * stat + (1 - lamb) * z
+
+        limit = mewma_center + L * sigma_hat * np.sqrt((lamb / (2 - lamb)) * (1 - (1 - lamb) ** (2 * i)))
+
+        if z > limit or z < (mewma_center - (limit - mewma_center)):
+            return i
+
+    return max_steps
+
+
+# --------------------
+# Import helpers
+# --------------------
+def import_detector_module(name: str):
+    return importlib.import_module(f"src.detectors.{name.lower()}_service")
+
+
+def import_matcher_module(name: str):
+    return importlib.import_module(f"src.matching.{name.lower()}_match_service")
+
+
+def import_homography_module(name: str):
+    return importlib.import_module(f"src.homography.{name.lower()}_service")
+
+
 # --------------------
 # Pipeline
 # --------------------
@@ -69,7 +160,6 @@ def run_method1_pipeline(
                 logger.exception(f"Error in baseline sample {i}")
                 errors.append(traceback.format_exc())
 
-        # ذخیره baseline داخل baseline_results.jsonl
         save_json({"baseline_stats": stats_baseline}, baseline_dir / "baseline_stats.json")
 
         if len(stats_baseline) < 5:
@@ -122,7 +212,6 @@ def run_method1_pipeline(
             out_dir / "shifted_and_arl.json",
         )
 
-        # --- Summary ---
         summary = {
             "combo": combo_name,
             "n_baseline": len(stats_baseline),
