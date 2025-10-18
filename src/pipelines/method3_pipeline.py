@@ -72,7 +72,7 @@ def run_method3_pipeline(
     errors = []
     try:
         # load images
-        src_images, tgt_images = load_images()
+        src_images, tgt_images, src_names, tgt_names = load_images()
         logger.info(f"Loaded {len(src_images)} src / {len(tgt_images)} tgt images")
 
         # import modules
