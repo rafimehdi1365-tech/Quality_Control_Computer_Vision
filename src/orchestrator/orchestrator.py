@@ -61,7 +61,7 @@ def run_combo(combo, results_dir, mode="ci"):
             matcher_name=matcher,
             homography_name=homography,
             params=params,
-            n_samples=params.get("baseline_samples", 100),
+            n_baseline=params.get("baseline_samples", 100),
         )
         # ذخیره summary برای orchestrator
         with open(combo_dir / "orchestrator_summary.json", "w") as f:
