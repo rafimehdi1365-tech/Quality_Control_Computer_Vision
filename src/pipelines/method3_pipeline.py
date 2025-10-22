@@ -36,13 +36,29 @@ def plot_line(series, out_path: Path, title: str):
     plt.close()
 
 
-def import_module(prefix: str, name: str):
+
+def import_detector(name: str):
     try:
-        return importlib.import_module(f"{prefix}.{name.lower()}_service")
+        return importlib.import_module(f"src.detectors.{name.lower()}_service")
     except Exception:
-        logger.exception(f"Import failure for {prefix}.{name}")
+        logger.exception("Detector import failed")
         raise
 
+
+def import_matcher(name: str):
+    try:
+        return importlib.import_module(f"src.matching.{name.lower()}_match_service")
+    except Exception:
+        logger.exception("Matcher import failed")
+        raise
+
+
+def import_homography(name: str):
+    try:
+        return importlib.import_module(f"src.homography.{name.lower()}_service")
+    except Exception:
+        logger.exception("Homography import failed")
+        raise
 
 def run_method3_pipeline(
     detector_name: str = "sift",
@@ -77,9 +93,9 @@ def run_method3_pipeline(
 
         # import modules
         try:
-            detector_mod = import_module("src.detectors", detector_name)
-            matcher_mod = import_module("src.matching", matcher_name)
-            homo_mod = import_module("src.homography", homography_name)
+            detector_mod = import_detector("src.detectors", detector_name)
+            matcher_mod = import_matcher("src.matching", matcher_name)
+            homo_mod = import_homography("src.homography", homography_name)
         except Exception:
             errors.append("Import modules failed")
             save_json({"errors": errors}, out_dir / "errors.json")
