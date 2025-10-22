@@ -197,7 +197,7 @@ def run_method2_pipeline(
             return max_steps
 
         try:
-            arl = compute_arl_local(center, sigma_hat, mewma_lambda, L_factor, gen_shift, max_steps)
+            arl = compute_arl_local(center, sigma_hat, mewma_lambda, L_factor, gen_shift, max_steps=max_arl_steps)
         except Exception:
             logger.exception("Error computing ARL")
             errors.append(traceback.format_exc())
