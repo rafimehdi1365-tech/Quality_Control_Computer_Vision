@@ -231,3 +231,19 @@ def run_method1_pipeline(
         errors.append(traceback.format_exc())
         save_json({"errors": errors}, out_dir / "errors.json")
         raise
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--detector_name", type=str, default="SIFT")
+    parser.add_argument("--matcher_name", type=str, default="BF")
+    parser.add_argument("--homography_name", type=str, default="RANSAC")
+    parser.add_argument("--n_baseline", type=int, default=50)
+    args = parser.parse_args()
+
+    run_method1_pipeline(  
+        detector_name=args.detector_name,
+        matcher_name=args.matcher_name,
+        homography_name=args.homography_name,
+        n_baseline=args.n_baseline,
+    )
