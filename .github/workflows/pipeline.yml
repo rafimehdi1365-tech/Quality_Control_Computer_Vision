@@ -48,6 +48,7 @@ jobs:
       - name: Run pipeline
         run: |
           echo ">>> Running ${{ matrix.method }} with ${{ matrix.detector }} / ${{ matrix.matcher }} / ${{ matrix.homography }}"
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
           python src/pipelines/${{ matrix.method }}_pipeline.py \
             --detector_name ${{ matrix.detector }} \
             --matcher_name ${{ matrix.matcher }} \
