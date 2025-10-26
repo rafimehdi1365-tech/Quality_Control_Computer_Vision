@@ -1,16 +1,30 @@
-name: Fault Detection Pipeline
+name: Matrix QC Pipeline
 
 on:
   push:
     branches: [ main ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  build-run:
+  run_matrix:
+    name: ${{ matrix.method }} | ${{
+      matrix.detector }} | ${{
+      matrix.matcher }} | ${{
+      matrix.homography }}
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      max-parallel: 20   # حداکثر موازی ممکن (GitHub معمولاً تا 20 اجازه می‌دهد)
+      matrix:
+        method: [method1, method2, method3]
+        detector: [sift, orb, akaze, brisk]
+        matcher: [bf, flann]
+        homography: [ransac, lmeds, usac, lstsq, dlt]
+
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -18,24 +32,33 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
-          pip install --no-cache-dir -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run orchestrator
+      - name: Run pipeline
         run: |
-          python -m src.orchestrator.orchestrator --grid configs/grid_full.yaml --mode full
+          echo ">>> Running ${{ matrix.method }} with ${{ matrix.detector }} / ${{ matrix.matcher }} / ${{ matrix.homography }}"
+          python src/pipelines/${{ matrix.method }}_pipeline.py \
+            --detector_name ${{ matrix.detector }} \
+            --matcher_name ${{ matrix.matcher }} \
+            --homography_name ${{ matrix.homography }} \
+            --n_baseline 40
+        env:
+          PYTHONUNBUFFERED: 1
 
-      - name: Debug workspace content
-        run: |
-          echo "=== Current directory ==="
-          pwd
-          echo "=== Files and folders ==="
-          ls -R .
-
-      - name: Upload results (if exist)
-        if: success()
+      - name: Upload results as artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: results
+          name: result-${{ matrix.method }}-${{ matrix.detector }}-${{ matrix.matcher }}-${{ matrix.homography }}
           path: results/
